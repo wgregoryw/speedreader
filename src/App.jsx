@@ -1,9 +1,7 @@
-import React, { useRef, useState, useEffect, useRef as useRef2 } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Container, Typography, Box, Button, Input, Paper } from '@mui/material';
 import ePub from 'epubjs';
 import * as pdfjsLib from 'pdfjs-dist';
-import reactLogo from './assets/react.svg';
-import viteLogo from '/vite.svg';
 import './App.css';
 
 // Set PDF.js workerSrc to CDN for Vite compatibility
