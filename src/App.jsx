@@ -1,11 +1,25 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { Container, Typography, Box, Button, Input, Paper } from '@mui/material';
+import React, { useRef, useState, useEffect, useMemo, useCallback, memo } from 'react';
+import { Container, Typography, Box, Button, Paper } from '@mui/material';
 import ePub from 'epubjs';
 import * as pdfjsLib from 'pdfjs-dist';
 import './App.css';
 
 // Set PDF.js workerSrc to CDN for Vite compatibility
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+
+const WordPreview = memo(({ word, isSelected, isHighlighted, onClick }) => (
+  <span
+    style={{
+      background: isHighlighted ? '#ffe082' : (isSelected ? '#b3e5fc' : 'inherit'),
+      cursor: 'pointer',
+      borderRadius: 3,
+      padding: '0 2px',
+    }}
+    onClick={onClick}
+  >
+    {word} 
+  </span>
+));
 
 function App() {
   const fileInputRef = useRef();
@@ -49,7 +63,7 @@ function App() {
   };
 
   // Utility: Clean and preserve paragraphs from HTML (optimized)
-  function extractCleanTextFromHTML(html) {
+  const extractCleanTextFromHTML = useCallback((html) => {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
     // Only use paragraphs and list items for main text
@@ -70,7 +84,7 @@ function App() {
     text = text.replace(/[ \t]+/g, ' ');
     text = text.replace(/([.!?])([^ \n])/g, '$1 $2'); // Ensure space after punctuation
     return text.trim();
-  }
+  }, []);
 
   const parseEpub = async (file) => {
     setLoading(true);
@@ -199,7 +213,7 @@ function App() {
     fileInputRef.current.click();
   };
 
-  const handlePlay = () => {
+  const handlePlay = useCallback(() => {
     if (chapterWords.length === 0) return;
     setIsPlaying(true);
     setShowChapters(false); // Minimize chapters when play is clicked
@@ -219,33 +233,34 @@ function App() {
       });
     }, 200); // 200ms per word (300wpm)
     setIntervalId(id);
-  };
+  }, [chapterWords.length, currentWordIdx, intervalId]);
 
-  const handlePause = () => {
+  const handlePause = useCallback(() => {
     setIsPlaying(false);
     if (intervalId) {
       clearInterval(intervalId);
       setIntervalId(null);
     }
-  };
+  }, [intervalId]);
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     setCurrentWordIdx(0);
     handlePause();
-  };
+  }, [handlePause]);
 
   // When a chapter is selected, update chapterWords and reset speed reading
-  const handleSelectChapter = (idx) => {
+  const handleSelectChapter = useCallback((idx) => {
+    const processedText = useMemo(() => chapters[idx].text.split(/\s+/), [chapters, idx]);
     setSelectedChapterIdx(idx);
-    setChapterWords(chapters[idx].text.split(/\s+/));
+    setChapterWords(processedText);
     setCurrentWordIdx(0);
     setIsPlaying(false);
     if (intervalId) clearInterval(intervalId);
     setIntervalId(null);
-  };
+  }, [chapters, intervalId]);
 
   // When a word is clicked in the preview, set the speed reading cursor and allow dictionary lookup
-  const handleWordClick = (idx) => {
+  const handleWordClick = useCallback((idx) => {
     setCurrentWordIdx(idx);
     setIsPlaying(false);
     if (intervalId) clearInterval(intervalId);
@@ -253,35 +268,30 @@ function App() {
     setSelectedWord(chapterWords[idx]);
     setSelectedWordIdx(idx);
     setShowDictionary(false);
-  };
+  }, [intervalId, chapterWords]);
 
-  const handleDictionaryLookup = async () => {
+  const handleDictionaryLookup = useCallback(async () => {
     if (chapterWords.length > 0 && currentWordIdx >= 0 && currentWordIdx < chapterWords.length) {
       const word = chapterWords[currentWordIdx];
-      setSelectedWord(word);
-      setSelectedWordIdx(currentWordIdx);
-      setShowDictionary(true);
-      setDictionaryDefinition('');
-      // Fetch definition directly from the dictionary API
+      // Batch state updates
+      const updates = (showDict) => {
+        setSelectedWord(word);
+        setSelectedWordIdx(currentWordIdx);
+        setShowDictionary(showDict);
+        setDictionaryDefinition('');
+      };
+      updates(true);
+      
       try {
         const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
-        if (response.ok) {
-          const data = await response.json();
-          const meanings = data[0]?.meanings || [];
-          if (meanings.length > 0) {
-            const definition = meanings[0].definitions[0].definition;
-            setDictionaryDefinition(definition || 'No definition found.');
-          } else {
-            setDictionaryDefinition('No definition found.');
-          }
-        } else {
-          setDictionaryDefinition('No definition found.');
-        }
+        const data = await response.json();
+        const definition = data[0]?.meanings?.[0]?.definitions?.[0]?.definition || 'No definition found.';
+        setDictionaryDefinition(definition);
       } catch (e) {
         setDictionaryDefinition('Error fetching definition.');
       }
     }
-  };
+  }, [chapterWords, currentWordIdx]);
 
   // Scroll preview to current word ONLY when playing
   useEffect(() => {
@@ -631,25 +641,15 @@ function App() {
             }} ref={previewBoxRef}>
               <Typography variant="subtitle2" color="text.secondary" gutterBottom>Preview (click a word to start there)</Typography>
               <Box sx={{ userSelect: 'text', wordBreak: 'break-word', lineHeight: 2 }}>
-                {chapterWords.map((w, i) => (
-                  <span
+                {useMemo(() => chapterWords.map((w, i) => (
+                  <WordPreview
                     key={i}
-                    data-word-idx={i}
-                    style={{
-                      background: i === currentWordIdx
-                        ? '#ffe082'
-                        : (selectedWordIdx === i && i !== currentWordIdx
-                            ? '#b3e5fc'
-                            : 'inherit'),
-                      cursor: 'pointer',
-                      borderRadius: 3,
-                      padding: '0 2px',
-                    }}
+                    word={w}
+                    isSelected={i === currentWordIdx}
+                    isHighlighted={selectedWordIdx === i && i !== currentWordIdx}
                     onClick={() => handleWordClick(i)}
-                  >
-                    {w} 
-                  </span>
-                ))}
+                  />
+                )), [chapterWords, currentWordIdx, selectedWordIdx, handleWordClick])}
               </Box>
               {selectedWord && !showDictionary && (
                 <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
