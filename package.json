@@ -2,8 +2,6 @@
   "name": "speedreader",
   "private": true,
   "version": "0.0.0",
-  "license": "GPL-3.0-or-later",
-  "homepage": "https://hantyumi.cloud",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -25,6 +23,7 @@
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
     "@vitejs/plugin-react": "^4.4.1",
+    "concurrently": "^9.1.2",
     "eslint": "^9.25.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.19",

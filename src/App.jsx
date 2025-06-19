@@ -1,11 +1,7 @@
 import React, { useRef, useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { Container, Typography, Box, Button, Paper } from '@mui/material';
 import ePub from 'epubjs';
-import * as pdfjsLib from 'pdfjs-dist';
 import './App.css';
-
-// Set PDF.js workerSrc to CDN for Vite compatibility
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 const WordPreview = memo(({ word, isSelected, isHighlighted, onClick }) => (
   <span
@@ -24,43 +20,23 @@ const WordPreview = memo(({ word, isSelected, isHighlighted, onClick }) => (
 function App() {
   const fileInputRef = useRef();
   const previewBoxRef = useRef();
-  // Add a ref to track pending resume state
   const pendingResumeRef = useRef(null);
   const [fileName, setFileName] = useState('');
   const [error, setError] = useState('');
-  const [fileContent, setFileContent] = useState('');
-  const [words, setWords] = useState([]);
-  const [currentWordIdx, setCurrentWordIdx] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [intervalId, setIntervalId] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [chapters, setChapters] = useState([]); // [{title, text, index}]
+  const [chapters, setChapters] = useState([]);
   const [selectedChapterIdx, setSelectedChapterIdx] = useState(null);
   const [chapterWords, setChapterWords] = useState([]);
   const [showChapters, setShowChapters] = useState(true);
   const [selectedWord, setSelectedWord] = useState(null);
   const [selectedWordIdx, setSelectedWordIdx] = useState(null);
   const [showDictionary, setShowDictionary] = useState(false);
-  const [dictionaryUrl, setDictionaryUrl] = useState('');
   const [dictionaryDefinition, setDictionaryDefinition] = useState('');
   const [showResumePrompt, setShowResumePrompt] = useState(false);
   const [resumeState, setResumeState] = useState(null);
-
-  const parseTxt = (file) => {
-    setLoading(true);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setFileContent(e.target.result);
-      setWords(e.target.result.split(/\s+/));
-      setCurrentWordIdx(0);
-      setLoading(false);
-    };
-    reader.onerror = (e) => {
-      setError('Failed to read TXT file.');
-      setLoading(false);
-    };
-    reader.readAsText(file);
-  };
+  const [currentWordIdx, setCurrentWordIdx] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [intervalId, setIntervalId] = useState(null);
 
   // Utility: Clean and preserve paragraphs from HTML (optimized)
   const extractCleanTextFromHTML = useCallback((html) => {
@@ -139,15 +115,12 @@ function App() {
         setChapters([]);
         setSelectedChapterIdx(null);
         setChapterWords([]);
-        setFileContent('');
-        setWords([]);
       } else {
         setChapters(chapterArr);
         setSelectedChapterIdx(0);
         setChapterWords(chapterArr[0].text.split(/\s+/));
         setCurrentWordIdx(0);
-        setFileContent(''); // Don't show full text
-        setWords([]);
+        setShowChapters(true); // Show chapters for EPUB files
       }
       setLoading(false);
     } catch (err) {
@@ -157,56 +130,19 @@ function App() {
     }
   };
 
-  const parsePdf = async (file) => {
-    setLoading(true);
-    try {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        try {
-          const typedarray = new Uint8Array(e.target.result);
-          const pdf = await pdfjsLib.getDocument({ data: typedarray }).promise;
-          let text = '';
-          for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const content = await page.getTextContent();
-            text += content.items.map((item) => item.str).join(' ') + ' ';
-          }
-          setFileContent(text);
-          setWords(text.split(/\s+/));
-          setCurrentWordIdx(0);
-          setLoading(false);
-        } catch (err) {
-          setError('Failed to parse PDF file.');
-          setLoading(false);
-        }
-      };
-      reader.onerror = (e) => {
-        setError('Failed to read PDF file.');
-        setLoading(false);
-      };
-      reader.readAsArrayBuffer(file);
-    } catch (err) {
-      setError('Failed to parse PDF file.');
-      setLoading(false);
-    }
-  };
-
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (ext !== 'epub') {
+      setError('Only EPUB files are supported.');
+      return;
+    }
+
     setFileName(file.name);
     setError('');
-    const ext = file.name.split('.').pop().toLowerCase();
-    if (ext === 'txt') {
-      parseTxt(file);
-    } else if (ext === 'epub') {
-      parseEpub(file);
-    } else if (ext === 'pdf') {
-      parsePdf(file);
-    } else {
-      setError('Unsupported file type.');
-    }
-    // Do not restore state here; handled by resume logic
+    parseEpub(file);
   };
 
   const handleImportClick = () => {
@@ -248,16 +184,20 @@ function App() {
     handlePause();
   }, [handlePause]);
 
+  // Memoize the processed text for the current chapter
+  const processedChapterText = useMemo(() => {
+    if (chapters.length === 0 || selectedChapterIdx === null) return [];
+    return chapters[selectedChapterIdx].text.split(/\s+/);
+  }, [chapters, selectedChapterIdx]);
+
   // When a chapter is selected, update chapterWords and reset speed reading
   const handleSelectChapter = useCallback((idx) => {
-    const processedText = useMemo(() => chapters[idx].text.split(/\s+/), [chapters, idx]);
     setSelectedChapterIdx(idx);
-    setChapterWords(processedText);
     setCurrentWordIdx(0);
     setIsPlaying(false);
     if (intervalId) clearInterval(intervalId);
     setIntervalId(null);
-  }, [chapters, intervalId]);
+  }, [intervalId]);
 
   // When a word is clicked in the preview, set the speed reading cursor and allow dictionary lookup
   const handleWordClick = useCallback((idx) => {
@@ -350,6 +290,11 @@ function App() {
     }
   };
 
+  // Update chapter words when processed text changes
+  useEffect(() => {
+    setChapterWords(processedChapterText);
+  }, [processedChapterText]);
+
   // After chapters are loaded, if pendingResumeRef is set, restore chapter/word
   useEffect(() => {
     if (
@@ -368,6 +313,20 @@ function App() {
     }
   }, [chapters]);
 
+  // Memoize the word preview components
+  const memoizedWordPreviews = useMemo(() => 
+    chapterWords.map((w, i) => (
+      <WordPreview
+        key={i}
+        word={w}
+        isSelected={i === currentWordIdx}
+        isHighlighted={selectedWordIdx === i && i !== currentWordIdx}
+        onClick={() => handleWordClick(i)}
+      />
+    )), 
+    [chapterWords, currentWordIdx, selectedWordIdx, handleWordClick]
+  );
+
   return (
     <Container
       maxWidth={false}
@@ -383,12 +342,12 @@ function App() {
         m: 0,
       }}
     >
-      {/* Chapters sidebar - positioned independently */}
+      {/* Chapters sidebar */}
       {fileName && showChapters && (
         <Box sx={{ 
           position: 'fixed',
           left: 32,
-          top: 0,
+          top: 24,
           width: 240, 
           minWidth: 200, 
           bgcolor: '#f5f5f5', 
@@ -398,26 +357,35 @@ function App() {
           overflow: 'auto', 
           zIndex: 2, 
           boxShadow: 2,
-          mt: 6 
+          paddingRight: 4 // Add extra padding on the right
         }}>
           <Button size="small"
             sx={{
-              position: 'absolute', top: 8, right: 8, minWidth: 0, p: 0.5,
-              background: '#1976d2', color: '#fff', borderRadius: '50%',
-              width: 32, height: 32, fontWeight: 'bold', fontSize: 18,
-              boxShadow: 2,
-              '&:hover': { background: '#1565c0' }
-            }}
+              position: 'absolute',
+              top: 16,
+              left: 8,
+              minWidth: 0,
+              p: 0.5,
+              background: '#1976d2',
+              color: '#fff',
+              borderRadius: '50%',
+                width: 32,
+                height: 32,
+                fontWeight: 'bold',
+                fontSize: 18,
+                boxShadow: 2,
+                '&:hover': { background: '#1565c0' }
+              }}
             onClick={() => setShowChapters(false)}
             title="Hide chapters"
-          >&lt;</Button>
+          >-</Button>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 3, mt: 5 }}>
             <Typography variant="h6">Chapters</Typography>
             <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".epub,.pdf,.txt"
+                accept=".epub"
                 style={{ display: 'none' }}
                 onChange={handleFileChange}
               />
@@ -434,7 +402,7 @@ function App() {
                     color: 'text.primary'
                   }
                 }}
-              >New File</Button>
+              >New Book</Button>
             </Box>
           </Box>
           {chapters.length === 0 && <Typography variant="body2" color="text.secondary">No chapters loaded</Typography>}
@@ -448,17 +416,19 @@ function App() {
       {fileName && !showChapters && (
         <Box sx={{ 
           position: 'fixed',
-          left: 32,
-          top: 24,
+          left: 40,
+          top: 40,
           width: 32, 
           minWidth: 32,
+          height: 32,
           display: 'flex', 
-          alignItems: 'flex-start', 
+          alignItems: 'center', 
           justifyContent: 'center', 
           zIndex: 2
         }}>
           <Button size="small"
             sx={{
+              position: 'absolute',
               minWidth: 0, p: 0.5,
               background: '#1976d2', color: '#fff', borderRadius: '50%',
               width: 32, height: 32, fontWeight: 'bold', fontSize: 18,
@@ -467,7 +437,7 @@ function App() {
             }}
             onClick={() => setShowChapters(true)}
             title="Show chapters"
-          >&gt;</Button>
+          >+</Button>
         </Box>
       )}
       <Box
@@ -487,55 +457,77 @@ function App() {
           width: '1200px',
         }}
       >
-        {/* Import New File button is now part of the chapters sidebar */}
-        
-        {/* Resume prompt */}
-        {!fileName && showResumePrompt && resumeState && (
-          <Paper elevation={3} sx={{ width: '100%', maxWidth: 900, p: 2, position: 'relative', textAlign: 'center', background: '#e3f2fd' }}>
-            <Typography variant="h5" color="primary" gutterBottom>
-              Continue where you left off?
-            </Typography>
-            <Typography variant="body1" sx={{ mb: 2 }}>
-              Last file: <b>{resumeState.fileName}</b><br/>
-              Chapter: <b>{typeof resumeState.selectedChapterIdx === 'number' ? resumeState.selectedChapterIdx + 1 : 1}</b>
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
-              <Button variant="contained" color="primary" onClick={handleResume}>Resume Reading</Button>
-              <Button variant="outlined" color="secondary" onClick={() => setShowResumePrompt(false)}>Dismiss</Button>
-            </Box>
-          </Paper>
-        )}
-        
-        {/* Import UI, only before import */}
+        {/* Import UI and resume prompt */}
         {!fileName ? (
-          <Paper elevation={3} sx={{ width: '100%', maxWidth: 900, p: 3, position: 'relative', mt: showResumePrompt ? 2 : 0 }}>
-            <Typography variant="h4" align="center" gutterBottom>
-              SpeedReader
-            </Typography>
-            <Typography variant="body1" align="center" gutterBottom>
-              Import your text (EPUB, PDF, or TXT) and start speed reading!
-            </Typography>
-            <Box display="flex" flexDirection="column" alignItems="center" gap={2}>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".epub,.pdf,.txt"
-                style={{ display: 'none' }}
-                onChange={handleFileChange}
-              />
-              <Button variant="contained" onClick={handleImportClick} size="large">
-                Import File
-              </Button>
-              {error && (
-                <Typography variant="subtitle2" color="error">
-                  {error}
-                </Typography>
+          <>
+            <Paper elevation={3} sx={{ width: '100%', maxWidth: 900, p: 3, position: 'relative' }}>
+              <Typography variant="h4" align="center" gutterBottom>
+                SpeedReader
+              </Typography>
+              <Typography variant="body1" align="center" gutterBottom>
+                Import your EPUB book and start speed reading!
+              </Typography>
+              <Box display="flex" flexDirection="column" alignItems="center" gap={2}>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".epub"
+                  style={{ display: 'none' }}
+                  onChange={handleFileChange}
+                />
+                <Button variant="contained" onClick={handleImportClick} size="large">
+                  Import Book
+                </Button>
+                {error && (
+                  <Typography variant="subtitle2" color="error">
+                    {error}
+                  </Typography>
+                )}
+              </Box>
+            </Paper>
+            
+            {/* Resume prompt - positioned below without affecting main layout */}
+            <Box sx={{ height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', mt: 3 }}>
+              {showResumePrompt && resumeState && (
+                <Paper 
+                  elevation={2} 
+                  sx={{ 
+                    width: '100%', 
+                    maxWidth: 700, 
+                    p: 2,
+                    position: 'relative', 
+                    textAlign: 'left', 
+                    background: '#f5f5f5',
+                    borderLeft: '4px solid #1976d2',
+                    borderRadius: 1,
+                    opacity: 0.9,
+                    transition: 'opacity 0.2s',
+                    '&:hover': {
+                      opacity: 1
+                    }
+                  }}
+                >
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Box>
+                      <Typography variant="body1" color="primary.main" sx={{ fontWeight: 500 }}>
+                        Continue reading: <span style={{ color: '#333' }}>{resumeState.fileName}</span>
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                        Chapter {typeof resumeState.selectedChapterIdx === 'number' ? resumeState.selectedChapterIdx + 1 : 1}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Button size="small" variant="contained" color="primary" onClick={handleResume}>Resume</Button>
+                      <Button size="small" variant="text" color="inherit" onClick={() => setShowResumePrompt(false)}>Dismiss</Button>
+                    </Box>
+                  </Box>
+                </Paper>
               )}
             </Box>
-          </Paper>
+          </>
         ) : null}
         
-        {/* Speed reading controls and preview for selected chapter */}
+        {/* Speed reading controls and preview */}
         {selectedChapterIdx !== null && chapters[selectedChapterIdx] && (
           <Paper elevation={2} sx={{ 
             mt: 8, 
@@ -581,7 +573,9 @@ function App() {
             {/* Hide the rest of the box when dictionary is open */}
             {!showDictionary && (
               <>
-                <Typography variant="h6" align="center" gutterBottom sx={{ color: '#90caf9', fontSize: '1.5rem' }}>{chapters[selectedChapterIdx].title}</Typography>
+                <Typography variant="h6" align="center" gutterBottom sx={{ color: '#90caf9', fontSize: '1.5rem' }}>
+                  {chapters[selectedChapterIdx]?.title || fileName}
+                </Typography>
                 <Box
                   sx={{
                     fontSize: { xs: 64, sm: 82, md: 96 },
@@ -641,15 +635,7 @@ function App() {
             }} ref={previewBoxRef}>
               <Typography variant="subtitle2" color="text.secondary" gutterBottom>Preview (click a word to start there)</Typography>
               <Box sx={{ userSelect: 'text', wordBreak: 'break-word', lineHeight: 2 }}>
-                {useMemo(() => chapterWords.map((w, i) => (
-                  <WordPreview
-                    key={i}
-                    word={w}
-                    isSelected={i === currentWordIdx}
-                    isHighlighted={selectedWordIdx === i && i !== currentWordIdx}
-                    onClick={() => handleWordClick(i)}
-                  />
-                )), [chapterWords, currentWordIdx, selectedWordIdx, handleWordClick])}
+                {memoizedWordPreviews}
               </Box>
               {selectedWord && !showDictionary && (
                 <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -661,7 +647,7 @@ function App() {
         )}
         {loading && (
           <Typography variant="body1" color="info.main" sx={{ mt: 2 }}>
-            Loading and parsing file...
+            Loading and parsing book...
           </Typography>
         )}
         <Typography variant="caption" align="center" color="text.secondary" sx={{ mt: 2 }}>
