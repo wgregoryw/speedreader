@@ -76,7 +76,11 @@ The project is configured for GitHub Pages deployment. Push to the main branch t
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the GNU General Public License v3.0 - see the LICENSE file for details. This means:
+- You can freely use, modify, and distribute this software
+- Any modifications must also be released under the GPL
+- The software comes with no warranty
+- You must include the license and copyright notice with all copies
 
 ## Acknowledgments
 

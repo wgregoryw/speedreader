@@ -2,6 +2,7 @@
   "name": "speedreader",
   "private": true,
   "version": "0.0.0",
+  "license": "GPL-3.0-or-later",
   "homepage": "https://YOUR_USERNAME.github.io/speedreader/",
   "type": "module",
   "scripts": {
