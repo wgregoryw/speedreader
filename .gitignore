@@ -50,3 +50,11 @@ lerna-debug.log*
 
 # Local files
 *.local
+
+# Python virtual environments
+.venv
+venv/
+ENV/
+.env
+.Python
+python3*
