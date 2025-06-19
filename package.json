@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "license": "GPL-3.0-or-later",
-  "homepage": "https://wgregoryw.github.io/speedreader/",
+  "homepage": "https://hantyumi.cloud",
   "type": "module",
   "scripts": {
     "dev": "vite",
