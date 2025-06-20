@@ -3,17 +3,18 @@ import { Container, Typography, Box, Button, Paper } from '@mui/material';
 import ePub from 'epubjs';
 import './App.css';
 
-const WordPreview = memo(({ word, isSelected, isHighlighted, onClick }) => (
+const WordPreview = memo(({ word, isSelected, isHighlighted, onClick, index }) => (
   <span
+    data-word-idx={index}
     style={{
-      background: isHighlighted ? '#ffe082' : (isSelected ? '#b3e5fc' : 'inherit'),
+      background: isHighlighted ? '#4caf50' : (isSelected ? '#ff9800' : 'inherit'),
       cursor: 'pointer',
       borderRadius: 3,
       padding: '0 2px',
     }}
     onClick={onClick}
   >
-    {word} 
+    {word}
   </span>
 ));
 
@@ -233,16 +234,16 @@ function App() {
     }
   }, [chapterWords, currentWordIdx]);
 
-  // Scroll preview to current word ONLY when playing
+  // Scroll preview container to keep highlighted word in center
   useEffect(() => {
-    if (!isPlaying) return; // Only scroll when playing
-    if (previewBoxRef.current) {
-      const wordSpan = previewBoxRef.current.querySelector(`span[data-word-idx='${currentWordIdx}']`);
-      if (wordSpan) {
-        // Only scroll the preview box, not the whole page
-        // Use scrollIntoView with behavior: 'auto' to avoid jank
-        wordSpan.scrollIntoView({ block: 'center', behavior: 'auto', inline: 'nearest' });
-      }
+    if (!previewBoxRef.current) return;
+    const parent = previewBoxRef.current;
+    const wordSpan = parent.querySelector(`span[data-word-idx='${currentWordIdx}']`);
+    if (wordSpan) {
+      const parentHeight = parent.clientHeight;
+      const wordOffset = wordSpan.offsetTop + wordSpan.clientHeight / 2;
+      const scrollPos = wordOffset - parentHeight / 2;
+      parent.scrollTo({ top: scrollPos, behavior: isPlaying ? 'smooth' : 'auto' });
     }
   }, [currentWordIdx, isPlaying]);
 
@@ -318,6 +319,7 @@ function App() {
     chapterWords.map((w, i) => (
       <WordPreview
         key={i}
+        index={i}
         word={w}
         isSelected={i === currentWordIdx}
         isHighlighted={selectedWordIdx === i && i !== currentWordIdx}
@@ -350,7 +352,7 @@ function App() {
           top: 24,
           width: 240, 
           minWidth: 200, 
-          bgcolor: '#f5f5f5', 
+          bgcolor: '#181c24',
           borderRadius: 2, 
           p: 2, 
           height: '90vh', 
@@ -407,7 +409,16 @@ function App() {
           </Box>
           {chapters.length === 0 && <Typography variant="body2" color="text.secondary">No chapters loaded</Typography>}
           {chapters.map((ch, idx) => (
-            <Button key={idx} fullWidth variant={selectedChapterIdx === idx ? 'contained' : 'outlined'} sx={{ mb: 1, textAlign: 'left', zIndex: 2 }} onClick={() => handleSelectChapter(idx)}>
+            <Button 
+              key={idx} 
+              className="chapter-list-item"
+              fullWidth 
+              disableRipple
+              variant="text" 
+              sx={{ mb: 1, textAlign: 'left', zIndex: 2 }} 
+              onClick={() => handleSelectChapter(idx)}
+              aria-selected={selectedChapterIdx === idx}
+            >
               {ch.title}
             </Button>
           ))}
@@ -497,7 +508,7 @@ function App() {
                     p: 2,
                     position: 'relative', 
                     textAlign: 'left', 
-                    background: '#f5f5f5',
+                    background: '#181c24',
                     borderLeft: '4px solid #1976d2',
                     borderRadius: 1,
                     opacity: 0.9,
@@ -509,14 +520,17 @@ function App() {
                 >
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Box>
-                      <Typography variant="body1" color="primary.main" sx={{ fontWeight: 500 }}>
-                        Continue reading: <span style={{ color: '#333' }}>{resumeState.fileName}</span>
+                      <Typography variant="body1" color="primary.main" sx={{ fontWeight: 500, mb: 0.5 }}>
+                        Continue reading:
                       </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                      <Typography variant="body1" sx={{ color: '#e0e0e0', fontWeight: 600, mb: 0.5 }}>
+                        {resumeState.fileName}
+                      </Typography>
+                      <Typography variant="body2" sx={{ mt: 0.5, color: '#fff' }}>
                         Chapter {typeof resumeState.selectedChapterIdx === 'number' ? resumeState.selectedChapterIdx + 1 : 1}
                       </Typography>
                     </Box>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Box sx={{ display: 'flex', gap: 2, ml: 2 }}>
                       <Button size="small" variant="contained" color="primary" onClick={handleResume}>Resume</Button>
                       <Button size="small" variant="text" color="inherit" onClick={() => setShowResumePrompt(false)}>Dismiss</Button>
                     </Box>
@@ -608,12 +622,28 @@ function App() {
                   {chapterWords[currentWordIdx] || ''}
                 </Box>
                 <Box display="flex" gap={2}>
-                  <Button variant="contained" color="primary" onClick={handlePlay} disabled={isPlaying || chapterWords.length === 0}>Play</Button>
-                  <Button variant="contained" color="secondary" onClick={handlePause} disabled={!isPlaying}>Pause</Button>
+                  <Button 
+                    variant="contained" 
+                    color="primary" 
+                    onClick={handlePlay} 
+                    disabled={isPlaying || chapterWords.length === 0}
+                    className={isPlaying ? 'playing' : ''}
+                  >
+                    Play
+                  </Button>
+                  <Button 
+                    variant="contained" 
+                    color="secondary" 
+                    onClick={handlePause} 
+                    disabled={!isPlaying}
+                    className={isPlaying ? 'pausing' : ''}
+                  >
+                    Pause
+                  </Button>
                   <Button variant="outlined" onClick={handleReset} disabled={chapterWords.length === 0}>Reset</Button>
                   <Button variant="outlined" onClick={handleDictionaryLookup} disabled={chapterWords.length === 0} sx={{ ml: 2 }}>Define</Button>
                 </Box>
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+                <Typography variant="caption" className="word-count-caption" sx={{ mt: 1 }}>
                   Word {currentWordIdx + 1} / {chapterWords.length}
                 </Typography>
               </>
@@ -628,12 +658,14 @@ function App() {
               minHeight: 120, 
               overflowY: 'auto', 
               overflowX: 'hidden', 
-              background: '#fafafa', 
+              bgcolor: '#181c24 !important', // dark background for parsed text box
               cursor: 'pointer', 
               boxSizing: 'border-box', 
               position: 'relative' 
             }} ref={previewBoxRef}>
-              <Typography variant="subtitle2" color="text.secondary" gutterBottom>Preview (click a word to start there)</Typography>
+              <Typography variant="subtitle2" className="preview-caption" gutterBottom>
+                Preview (click a word to start there)
+              </Typography>
               <Box sx={{ userSelect: 'text', wordBreak: 'break-word', lineHeight: 2 }}>
                 {memoizedWordPreviews}
               </Box>
